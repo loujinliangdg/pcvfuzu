@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Hello World!</title>
+    <style>
+      form{
+        display: block;
+        width: 100%;
+        text-align: center;
+        margin-top: 120px;
+      }
+      .wx-login-qrcode{
+        display: block;
+        margin: auto;
+      }
+      .error-ts{
+        color: rgb(228, 47, 47);
+        text-align: center;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <form>
+      <label for="">
+        变啦账号：<input type="text" class="phoneNumber">
+      </label>
+      <label for="">
+        <input type="password" class="password">
+      </label>
+      <button type="submit">登录</button>
+    </form>
+    <p class="error-ts">密码错误</p>
+
+    <script>
+      require(`${__dirname}/renderer.js`)
+    </script>
+  </body>
+</html>

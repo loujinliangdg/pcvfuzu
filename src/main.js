@@ -1,6 +1,7 @@
 // Modules to control application life and create native browser window
 const electron = require('electron')
 const axios = require('./utils/axios')
+const qs = require('querystring')
 const {
   app, 
   BrowserWindow,
@@ -17,7 +18,10 @@ const fs = require("fs");
 // be closed automatically when the JavaScript object is garbage collected.
 let mainWindow;
 let wxWindow;
-
+let webwxsendmsgPlayload = null; //给用户发分享形式报告需要的参数对象
+/**
+ * 发现微信退出了让他来重新登陆微信
+ */
 ipcMain.on('wxQuit',(event,arg) =>{
   console.log('wxQuit');
   mainWindow.show();
@@ -27,13 +31,55 @@ ipcMain.on('wxQuit',(event,arg) =>{
   })
 })
 
+/**
+ * 微信页面获取 发消息需要的参数事件
+ */
+ipcMain.on('get-webwxsendmsgPlayload',(event,arg) =>{
+  console.log('get-webwxsendmsgPlayload')
+  event.returnValue = webwxsendmsgPlayload
+})
+
+
+/**
+ * 变啦登陆完成
+ */
 ipcMain.on('bianla-login-complete', (event, arg) => {
   var bianlaLoginResult = arg;
+  /**
+   * 微信二维码扫描成功，该去跳至微信web版
+   */
   ipcMain.on('to-login-wechat', (event, arg) => {
     console.log('to login wechat')
+    // 将变啦登陆成功后的信息存入本地
     fs.writeFileSync('bianlaMsg.json', JSON.stringify(bianlaLoginResult));
+
+
     mainWindow.hide();
     createWx(arg,bianlaLoginResult);
+    
+
+    const {session} = require('electron')
+  
+    // Modify the user agent for all requests to the following urls.
+    const filter = {
+      urls: []
+    }
+    
+    session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+      // 发消息的接口
+      if(/webwxsendmsg/.test(details.url)){
+        // console.log(details);
+        // console.log(details.uploadData[0])
+        // console.log(Object.prototype.toString.call(details.uploadData[0]))
+        // console.log(Object.prototype.toString.call(details.uploadData[0].bytes))
+        // console.log(details.uploadData[0].bytes.toString())
+        if(!webwxsendmsgPlayload){
+          webwxsendmsgPlayload = JSON.parse(details.uploadData[0].bytes.toString())
+          webwxsendmsgPlayload.headers = details.headers
+        }
+      }
+      callback({cancel: false, requestHeaders: details.requestHeaders})
+    })
   })
 })
 
@@ -69,11 +115,9 @@ function createWx(redirect,bianlaLoginResult){
   wxWindow.on('page-title-updated',(event) => event.preventDefault())
   // and load the index.html of the app.
   wxWindow.loadURL(redirect)
-  wxWindow.on('hide-window', () => {
-      console.log('hide-wxWindow')
-  });
   // Open the DevTools.
   // wxWindow.webContents.openDevTools()
+  // 如果在微信界面用户点击关闭按钮，则提醒他关闭后不再接单
   wxWindow.on('close',function(){
     const options = {
       type: 'warning',

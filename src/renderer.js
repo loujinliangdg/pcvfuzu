@@ -63,8 +63,7 @@ class DoWeiXin {
             }),{responseType: 'blob'})
             .then((result) =>{
                 blobToDataURL(result,(result) =>{
-                    loginQrCode.addQrCode(result);
-
+                    loginQrCode.addQrCode(result);//result = base64字符串
                     this.login();
                 })
             })
@@ -96,11 +95,8 @@ class DoWeiXin {
                 else if(code == 200){
                     var match = result.match(/redirect_uri="([^"]+)"/);
                     console.log('微信登陆成功')
-                    
-                    
 
                     if(match){
-                        console.log(match[1])
                         ipcRenderer.send('to-login-wechat', match[1]);
                     }
                     else{

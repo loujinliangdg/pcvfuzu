@@ -6,19 +6,21 @@ const POLL_DELAY = 5000;
 const axios = require('./utils/axios')
 const KeepAlive = require('./keepAlive')
 const LocalFriendManagement = require('./localFriendManagement')
-var watchat = null;
-var keepAlive = null;
+var wechat = null;    //微信中的一系列操作对象
+var keepAlive = null;//心跳检测管理对象
 var loopTimes = 0; //轮询次数
-var bianlaLoginResult = null;
+var bianlaLoginResult = null;   // 变啦登陆成功后返回的参数
+var webwxsendmsgPlayload = null;// 向用户发送分享报告时需要的请求参数
 
 
-
-class Wachat{
+class WeChat{
     constructor(){
         // 新增（去重后的）好友列表
         this.newFriendArray = [];
         // 用户的报告｛name:'报告'｝
         this.healthReports = {};
+        // pc v辅助登陆成功后向文件传输助手发送一条消息
+        this.MsgForMobile = `欢迎登陆PC版 v辅助`
     }
     init(){
         this.verifyIsHaveNewFriend();
@@ -54,13 +56,13 @@ class Wachat{
         var newFriendList = this.getNewFriendList();
         // 如果新增好友列表里没东西 则继续下一次轮询吧
         if(!newFriendList){
-            watchat = null;
-            watchat = new Wachat().init();
+            wechat = null;
+            wechat = new WeChat().init();
             return;
         }
         else{
-            // watchat = null;
-            // watchat = new Wachat().init();
+            // wechat = null;
+            // wechat = new WeChat().init();
             let iterator = this.newFriendListIterator(newFriendList);
             // 先验证这个是否已经添加过
             this.verfiyIsAlreadyAdd(iterator)
@@ -78,6 +80,7 @@ class Wachat{
                 this.verfiyIsAlreadyAdd(iterator);
             }
             else{
+                // 点击一下 好友申请列表的一条消息 只是看一看他是否是已经添加过的（就是判断弹窗中是否有+号）
                 item.querySelector('.bubble.js_message_bubble.ng-scope.bubble_default.left .card').click();
                 setTimeout(() =>{
                     var addButton = this.getAddFriendButtn();
@@ -95,15 +98,17 @@ class Wachat{
             }
         }
         else{
-            watchat = null;
-            watchat = new Wachat().init();
+            wechat = null;
+            wechat = new WeChat().init();
         }
     }
     /**
      * 验证这些新加好友是否来自一体机
      */
     verfiyIsFromXiaoWei(iterator,msgItemElement){
+        // 好友昵称
         var friendNickname = this.replaceEmojiAndBlank(msgItemElement.querySelector('.display_name').innerHTML);
+        // 好友头像地址
         var headImage = msgItemElement.querySelector('.card_avatar > img').src;
         /**
          * 跟据微信昵称检查他是否是一体机过来的人，如果是，则自动通过
@@ -111,9 +116,10 @@ class Wachat{
         var bianlaId = bianlaLoginResult.data.bianla_id;
         axios.get(`${API_HOST}/api/vhelper/addFriendByPC`,{params:{bianlaId:bianlaId,friendNickname:friendNickname}})
         .then((result) =>{
-            // 来自一体机 
-            if(result.code === 1){
+            // 来自一体机
+            if(result.code === 101){
                 let addButton = this.getAddFriendButtn();
+                // TODO:这里的假报告完事需要改掉
                 let healthReport = `${friendNickname}的报告` || result.data.healthLogUrl;
                 //经向后台检验，这个人来自一体机 主动点击添加好友按钮 + 添加好友
                 addButton.click(); 
@@ -124,6 +130,7 @@ class Wachat{
                         friendName:friendNickname,
                         headImage:headImage
                     });
+                    //点击一下 好友申请列表的一条消息 这条消息是刚刚添加过的 让弹窗出现 可以点击去发送消息的小按钮
                     msgItemElement.querySelector('.bubble.js_message_bubble.ng-scope.bubble_default.left .card').click();
                     // 发送消息
                     setTimeout(() =>{
@@ -131,7 +138,7 @@ class Wachat{
                         var sendMsgButton = document.querySelector('#mmpop_profile .web_wechat_tab_launch-chat');
                         if(sendMsgButton){
                             sendMsgButton.click();
-                            this.sendHealthReport(healthReport)
+                            this.sendHealthReport(healthReport,msgItemElement)
                         }
                         // 理论上不会走这里，如果走了就会少发一个报告
                         else{
@@ -155,27 +162,42 @@ class Wachat{
     /**
      * 迭代报告列表，给新增好友发送报告 
      */
-    toSendHealthReport(){
-        setTimeout(() =>{
-            var iterator = this.healthReportsIterator();
-            this.sendHealthReport(iterator);
-        },1500)
-    }
-    sendHealthReport(healthReport){
-        setTimeout(() =>{
-            let editArea = document.querySelector("#editArea");
-            editArea.innerHTML = healthReport;
-            editArea.setAttribute("autofocus",'');
-            editArea.focus();
-            var evt = document.createEvent('Event');
-            evt.initEvent('input', true, true);
-            editArea.dispatchEvent(evt); 
-            // 点击发送消息 给新增好友好送报告
-            document.querySelector('.btn.btn_send').click();
-            console.log('报告发送完毕');
+    // toSendHealthReport(){
+    //     setTimeout(() =>{
+    //         var iterator = this.healthReportsIterator();
+    //         this.sendHealthReport(iterator);
+    //     },1500)
+    // }
+    sendHealthReport(healthReport,msgItemElement){
+        // if(!webwxsendmsgPlayload){
+        //     webwxsendmsgPlayload = ipcRenderer.sendSync('get-webwxsendmsgPlayload')
+        // }
+        // var Origin = webwxsendmsgPlayload.headers.Origin;
+        // var LocalID = this.getLocalID();
+        // var Content = `<?xml version="1.0"?><msg><appmsg appid="wx7eed282c29abe8d4"  sdkver="0"><title>健康报告</title><des>瘦身抗衰</des><type>5</type><content></content><url>https://aidev.bianla.cn</url><thumburl>https://www.bianla.cn/img/logodark.png</thumburl></appmsg><appinfo><version></version><appname></appname></appinfo></msg>`
+        // // Content = Content.replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        // axios.post(`${Origin}/cgi-bin/mmwebwx-bin/webwxsendmsg`,{
+        //     BaseRequest:Object.assign({},webwxsendmsgPlayload.BaseRequest,{DeviceID:this.getDeviceId()}),
+        //     Msg:{
+        //         MsgType:49,
+        //         AppMsgType:5,
+        //         FromUserName:webwxsendmsgPlayload.Msg.FromUserName,
+        //         ToUserName:this.getNewFriendUserName(msgItemElement),
+        //         LocalID:LocalID,
+        //         ClientMsgId:LocalID,
+        //         Url:'https://aidev.bianla.cn',
+        //         FileName:'恭喜您获得一份健康报告',
+        //         Content:Content
+        //     }
+        // })
+        // .then((result) =>{
+        //     console.log(result);
+        // })
+        // console.log(webwxsendmsgPlayload)
 
-            watchat = null;
-            watchat = new Wachat().init();
+        this.useEditAreaSendMsg(healthReport,() =>{
+            wechat = null;
+            wechat = new WeChat().init();
         })
     }
 
@@ -199,21 +221,7 @@ class Wachat{
         }
     }
     getFriendRecommendMsgElement(){
-        var chatList = [].slice.call(document.querySelectorAll('#J_NavChatScrollBody > div > div')).filter((item) =>{
-            if(!/(?:top|bottom)-placeholder/.test(item.className)){
-                if(/朋友推荐消息/.test(item.innerHTML)){
-                    return true;
-                }
-                else{
-                    return false;
-                }
-            }
-            else{
-                return false;
-            }
-        })
-        var item = chatList[0];
-        return item; //Element || null
+        return this.getChatListItemByNickName('朋友推荐消息')
     }
     getNewFriendList(){
         var textareaTitle = document.querySelector('#chatArea > .box_hd').innerHTML;
@@ -255,8 +263,8 @@ class Wachat{
                     // })
                     // // 理论上不会走这里，但是一旦走了这里就进行下一次轮询吧
                     // if(!this.newFriendArray.length){
-                    //     watchat = null;
-                    //     watchat = new Wachat().init();
+                    //     wechat = null;
+                    //     wechat = new WeChat().init();
                     //     return;
                     // }
                     // // 验证这些新加好友是否来自一体机
@@ -302,14 +310,14 @@ class Wachat{
         }
         setTimeout(() =>{
             // 输出轮询次数
-            console.log(`轮询检测：${++loopTimes} 次，时间：${new Date().toString()}`);
+            console.log(`轮询检测：${++loopTimes} 次，时间：${new Date().toString().match(/\d+:\d{2}:\d{2}/)[0]}`);
 
             // 查看左边列表有没有申请加好友的
             var friendRecommendMsgElement = this.getFriendRecommendMsgElement();
             // 如果没有【添加好友】的信息 则执行下一次轮询
             if(!friendRecommendMsgElement){
-                watchat = null;
-                watchat = new Wachat().init();
+                wechat = null;
+                wechat = new WeChat().init();
             }
             else{
                 try {
@@ -328,16 +336,125 @@ class Wachat{
     wxIsQuit(){
 		var login = document.querySelector('.login');
 		return (login && window.getComputedStyle(login,null).display === 'block') ? true : false;
-	}
+    }
+    getChatListItemByNickName(nickname_text){
+        var chatList = [].slice.call(document.querySelectorAll('#J_NavChatScrollBody > div > div')).filter((item) =>{
+            if(!/(?:top|bottom)-placeholder/.test(item.className)){
+                //TODO:如果这nickname_text 或者item.querySelector('.info .nickname .nickname_text').innerHTML中含有表情将匹配不到
+                // 先这样吧，这个函数暂时只给[文件传输助手] [朋友推荐消息] 使用
+                if(nickname_text === item.querySelector('.info .nickname .nickname_text').innerHTML){
+                    return true;
+                }
+                else{
+                    return false;
+                }
+            }
+            else{
+                return false;
+            }
+        })
+        var item = chatList[0];
+        return item; //Element || null
+    }
+    loginPcSendMassageToMobile(){
+        return new Promise((resolve,reject) =>{
+            var startTime = 0;
+            var maxTime = 5000;
+            var timer = setInterval(() =>{
+                startTime += 100;
+
+                // 微信已退出
+                if(wechat.wxIsQuit()){
+                    clearInterval(timer);
+                    reject('wxQuit');//微信退出
+                }
+                // 超过5秒都没获取到文件传输助手这个元素
+                if(startTime === maxTime){
+                    clearInterval(timer);
+                    reject('文件传输助手获取失败');
+                }
+                else{
+                    var fileTransferAssistant = this.getChatListItemByNickName('文件传输助手');
+                    if(fileTransferAssistant){
+                        clearInterval(timer);
+                        fileTransferAssistant.firstElementChild.click();
+                        this.useEditAreaSendMsg(this.MsgForMobile,() =>{
+                            resolve('完成');
+                        })
+                    }
+                }
+            },100);
+        })
+    }
+    // 使用输入框发消息
+    useEditAreaSendMsg(msg,callback){
+        setTimeout(() =>{
+            try {
+                let editArea = document.querySelector("#editArea");
+                editArea.innerHTML = msg;
+                editArea.setAttribute("autofocus",'');
+                editArea.focus();
+                var evt = document.createEvent('Event');
+                evt.initEvent('input', true, true);
+                editArea.dispatchEvent(evt); 
+                // 点击发送消息 给新增好友好送报告
+                document.querySelector('.btn.btn_send').click();
+                !callback ? (function(){console.log(`${msg}  发送成功！`)})() : typeof callback === 'function' && callback();
+            } catch (error) {
+                console.error(`在使用输入框发送消息的时候出现了错误，消息内容:${msg}`)
+            }
+        })
+    }
+    /**
+     * 获取分享时需要的DeviceId
+     */
+    getDeviceId(){
+        var deviceId = 'e';
+        for(var i=0; i<15; i++){
+            deviceId += Math.floor(Math.random() * 10);
+        }
+        return deviceId;
+    }
+    /**
+     * 获取分享时需要的LocalId
+     */
+    getLocalID(){
+        var localId = Date.now().toString();
+        for(var i=0; i<4; i++){
+            localId += Math.floor(Math.random() * 10);
+        }
+        return localId;
+    }
+    /**
+     * 跟据一条好友申请消息获取用户username （分享时需要的username）
+     * @param {Element} msgItemElement 一条好友申请消息（Element） 
+     */
+    getNewFriendUserName(msgItemElement){
+        try {
+            var src = msgItemElement.querySelector('.card_avatar > img').src;
+        } catch (error) {
+            console.log('获取新好友头像失败')
+        }
+
+        var result = src.match(/username=([^&]+)/);
+        if(result){
+            return result[1] 
+        }
+        else{
+            return null;
+        }
+    }
 }
 
 
 
 
-window.onload = function(){
+window.addEventListener('load',() =>{
+    console.log('onload')
+    
     bianlaLoginResult = JSON.parse(fs.readFileSync('bianlaMsg.json','utf-8'));
     console.log(bianlaLoginResult)
-    console.log('window.onload')
+    
 
     keepAlive = new KeepAlive({
         bianlaId:bianlaLoginResult.data.bianla_id,
@@ -350,6 +467,21 @@ window.onload = function(){
 
         }
     });
-    keepAlive.start();
-    watchat = new Wachat().init()
-}
+    // keepAlive.start();
+    wechat = new WeChat();
+    // 微信登陆成功后先向文件传输助手发一条消息
+    wechat.loginPcSendMassageToMobile().then((result) =>{
+        keepAlive.start();
+        wechat.init();
+    })
+    // 应该是未获取到文件传输助手
+    .catch((error) =>{
+        // 如果微信不是登陆状态，则告诉主线程微信退出了
+        if(error === 'wxQuit'){
+            ipcRenderer.send('wxQuit','微信退出啦');
+        }
+        else{
+            console.log(error);
+        }
+    })
+})

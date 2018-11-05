@@ -53,33 +53,35 @@ ipcMain.on('bianla-login-complete', (event, arg) => {
     // 将变啦登陆成功后的信息存入本地
     fs.writeFileSync('bianlaMsg.json', JSON.stringify(bianlaLoginResult));
 
+    // 为了防止用户点击多次登陆变啦创建多个微信线程所以加了一个判断
+    if(!wxWindow){
+      mainWindow.hide();
+      createWx(arg,bianlaLoginResult);
+      
 
-    mainWindow.hide();
-    createWx(arg,bianlaLoginResult);
+      const {session} = require('electron')
     
-
-    const {session} = require('electron')
-  
-    // Modify the user agent for all requests to the following urls.
-    const filter = {
-      urls: []
-    }
-    
-    session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
-      // 发消息的接口
-      if(/webwxsendmsg/.test(details.url)){
-        // console.log(details);
-        // console.log(details.uploadData[0])
-        // console.log(Object.prototype.toString.call(details.uploadData[0]))
-        // console.log(Object.prototype.toString.call(details.uploadData[0].bytes))
-        // console.log(details.uploadData[0].bytes.toString())
-        if(!webwxsendmsgPlayload){
-          webwxsendmsgPlayload = JSON.parse(details.uploadData[0].bytes.toString())
-          webwxsendmsgPlayload.headers = details.headers
-        }
+      // Modify the user agent for all requests to the following urls.
+      const filter = {
+        urls: []
       }
-      callback({cancel: false, requestHeaders: details.requestHeaders})
-    })
+      
+      session.defaultSession.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+        // 发消息的接口
+        if(/webwxsendmsg/.test(details.url)){
+          // console.log(details);
+          // console.log(details.uploadData[0])
+          // console.log(Object.prototype.toString.call(details.uploadData[0]))
+          // console.log(Object.prototype.toString.call(details.uploadData[0].bytes))
+          // console.log(details.uploadData[0].bytes.toString())
+          if(!webwxsendmsgPlayload){
+            webwxsendmsgPlayload = JSON.parse(details.uploadData[0].bytes.toString())
+            webwxsendmsgPlayload.headers = details.headers
+          }
+        }
+        callback({cancel: false, requestHeaders: details.requestHeaders})
+      })
+    }
   })
 })
 

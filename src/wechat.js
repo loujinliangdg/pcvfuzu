@@ -2,6 +2,7 @@
 const {ipcRenderer} = require('electron')
 const fs = require('fs');
 const API_HOST = require('./API_HOST').api_host;
+const nickNameReg = require('./utils/emojiReg');
 const POLL_DELAY = 5000;
 const axios = require('./utils/axios')
 const KeepAlive = require('./keepAlive')
@@ -33,7 +34,18 @@ class WeChat{
      *  
      */
     replaceEmojiAndBlank(html){
-        return html.replace(/<span [^>]+><\/span>/g,'').replace(/\s/g,''); //后面一个replace替换名字中有微信表示的，替换为空字符串
+        var html = html.replace(/<span [^>]+>\s*<\/span>/g,'??');
+        var html2 = '';
+        for(var i=0; i<html.length; i++){
+            var code = html.charAt(i);
+            if(nickNameReg.test(code)){
+                html2 += code;
+            }
+            else{
+                html2 += '??';
+            }
+        }
+        return html2;
     }
     /**
      * 没有好友申请
@@ -108,19 +120,20 @@ class WeChat{
     verfiyIsFromXiaoWei(iterator,msgItemElement){
         // 好友昵称
         var friendNickname = this.replaceEmojiAndBlank(msgItemElement.querySelector('.display_name').innerHTML);
+        var friendNicknameClear = friendNickname.replace(/\?+/g,'');
         // 好友头像地址
         var headImage = msgItemElement.querySelector('.card_avatar > img').src;
         /**
          * 跟据微信昵称检查他是否是一体机过来的人，如果是，则自动通过
          */
         var bianlaId = bianlaLoginResult.data.bianla_id;
-        axios.get(`${API_HOST}/api/vhelper/addFriendByPC`,{params:{bianlaId:bianlaId,friendNickname:friendNickname}})
+        axios.get(`${API_HOST}/api/vhelper/addFriendByPC`,{params:{bianlaId:bianlaId,friendNickname:friendNickname,friendNicknameClear:friendNicknameClear}})
         .then((result) =>{
             // 来自一体机
-            if(result.code === 101){
+            if(result.code === 1){
                 let addButton = this.getAddFriendButtn();
                 // TODO:这里的假报告完事需要改掉
-                let healthReport = `${friendNickname}的报告` || result.data.healthLogUrl;
+                let healthReport = result.data.healthLogUrl;
                 //经向后台检验，这个人来自一体机 主动点击添加好友按钮 + 添加好友
                 addButton.click(); 
                 setTimeout(()=> {

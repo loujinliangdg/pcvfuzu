@@ -158,7 +158,7 @@ class WeChat{
                             console.log(`${friendNickName}没有发报告,很可能是网络问题呀（在我想给他发报告的时候还没有添加成功）`)
                             this.verfiyIsAlreadyAdd(iterator)
                         }
-                    },750)
+                    },1000 + parseInt(Math.random() * 2000))
                 },1500)
             }
             else{

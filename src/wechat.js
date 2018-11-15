@@ -2,7 +2,7 @@
 const {ipcRenderer} = require('electron')
 const fs = require('fs');
 const API_HOST = require('./API_HOST').api_host;
-const nickNameReg = require('./utils/emojiReg');
+const emojiReg = require('./utils/emojiReg');
 const POLL_DELAY = 5000;
 const axios = require('./utils/axios')
 const KeepAlive = require('./keepAlive')
@@ -22,6 +22,9 @@ class WeChat{
         this.healthReports = {};
         // pc v辅助登陆成功后向文件传输助手发送一条消息
         this.MsgForMobile = `欢迎登陆PC版 v辅助`
+        // 
+        this.SEE_SEND_MESSAGE_BTN_MAX = 5 //秒，查看有没有发送按钮 所用最大秒数
+        this.see_send_message_btn_start = 0;
     }
     init(){
         this.verifyIsHaveNewFriend();
@@ -30,7 +33,7 @@ class WeChat{
     /**
      * 
      * @param {string} html 好友昵称 有可能包含span标签空格等
-     * @return {string} 返回一个删除空白字符，及表情的字符串
+     * @return {string} 返回一个删除span标签，及表情或特殊字符串
      *  
      */
     replaceEmojiAndBlank(html){
@@ -38,11 +41,30 @@ class WeChat{
         var html2 = '';
         for(var i=0; i<html.length; i++){
             var code = html.charAt(i);
-            if(nickNameReg.test(code)){
+            if(emojiReg.nickNameReg.test(code)){
                 html2 += code;
             }
             else{
-                html2 += '??';
+                html2 += '?';
+            }
+        }
+        return html2;
+    }
+    /**
+     * 
+     * @param {string} html 好友昵称 有可能包含span标签空格等
+     * @return {string} 返回一个删除空白字符，及表情的字符串
+     */
+    clearFirendNickName(html){
+        var html = html.replace(/<span [^>]+>\s*<\/span>/g,'');
+        var html2 = '';
+        for(var i=0; i<html.length; i++){
+            var code = html.charAt(i);
+            if(emojiReg.clearNickNameReg.test(code)){
+                html2 += code;
+            }
+            else{
+                html2 += '';
             }
         }
         return html2;
@@ -51,7 +73,7 @@ class WeChat{
      * 没有好友申请
      */
     noHaveNewFriendApply(){
-        console.log('没有好友申请')
+        console.log('----------没有好友申请------------')
     }
     // 阻止用户操作
     preventUserDoAnyThing(){
@@ -120,7 +142,7 @@ class WeChat{
     verfiyIsFromXiaoWei(iterator,msgItemElement){
         // 好友昵称
         var friendNickname = this.replaceEmojiAndBlank(msgItemElement.querySelector('.display_name').innerHTML);
-        var friendNicknameClear = friendNickname.replace(/\?+/g,'');
+        var friendNicknameClear = this.clearFirendNickName(msgItemElement.querySelector('.display_name').innerHTML);
         // 好友头像地址
         var headImage = msgItemElement.querySelector('.card_avatar > img').src;
         /**
@@ -134,32 +156,27 @@ class WeChat{
                 let addButton = this.getAddFriendButtn();
                 // TODO:这里的假报告完事需要改掉
                 let healthReport = result.data.healthLogUrl;
-                //经向后台检验，这个人来自一体机 主动点击添加好友按钮 + 添加好友
+                // 经向后台检验，这个人来自一体机 主动点击添加好友按钮 + 添加好友
                 addButton.click(); 
+                // 点击点加按钮后 有一个弹框消失的过程以及微信接口处理添加好友的接口（会有一个添加完成的一个过程）那么我就等待 1500秒再去处理发消息的逻辑
+                let delay = 1500;
                 setTimeout(()=> {
-                    // TODO:1500秒这里可能网不好的时候 可能不一定能添加完成，那么下面的sendMsgButton可能就不会出现
-                    // 已添加好友存入本地(sessionStorage)
-                    LocalFriendManagement.addFriend({
-                        friendName:friendNickname,
-                        headImage:headImage
-                    });
-                    //点击一下 好友申请列表的一条消息 这条消息是刚刚添加过的 让弹窗出现 可以点击去发送消息的小按钮
-                    msgItemElement.querySelector('.bubble.js_message_bubble.ng-scope.bubble_default.left .card').click();
-                    // 发送消息
-                    setTimeout(() =>{
-                        // 发起聊天按钮
-                        var sendMsgButton = document.querySelector('#mmpop_profile .web_wechat_tab_launch-chat');
-                        if(sendMsgButton){
-                            sendMsgButton.click();
-                            this.sendHealthReport(healthReport,msgItemElement)
-                        }
-                        // 理论上不会走这里，如果走了就会少发一个报告
-                        else{
-                            console.log(`${friendNickName}没有发报告,很可能是网络问题呀（在我想给他发报告的时候还没有添加成功）`)
-                            this.verfiyIsAlreadyAdd(iterator)
-                        }
-                    },1000 + parseInt(Math.random() * 2000))
-                },1500)
+                    this.seeSendMessageBtn(msgItemElement,(sendMsgButton) =>{
+                        // 已添加好友存入本地(sessionStorage)
+                        LocalFriendManagement.addFriend({
+                            friendName:friendNickname,
+                            headImage:headImage
+                        });
+                        sendMsgButton.click();
+                        this.useEditAreaSendMsg(healthReport,() =>{
+                            wechat = null;
+                            wechat = new WeChat().init();
+                        })
+                    },() =>{
+                        console.log(`${friendNickName}没有发报告,很可能是网络问题呀（在我想给他发报告并且检测好几秒的时候还没有添加成功）`)
+                        this.verfiyIsAlreadyAdd(iterator)
+                    })
+                },delay)
             }
             else{
                 this.verfiyIsAlreadyAdd(iterator);
@@ -309,7 +326,32 @@ class WeChat{
         var sendMsgButton = document.querySelector('#mmpop_profile .web_wechat_tab_launch-chat');
         return sendMsgButton;
     }
+    seeSendMessageBtn(msgItemElement,have,notHave){
+        //点击一下 好友申请列表的一条消息 这条消息是刚刚添加过的 让弹窗出现 可以点击去发送消息的小按钮
+        msgItemElement.querySelector('.bubble.js_message_bubble.ng-scope.bubble_default.left .card').click();
+        var delay = this.see_send_message_btn_start === 0 ? (1000 + parseInt(Math.random() * 2000)) : 1000;
+        // 发送消息
+        setTimeout(() =>{
+            // 发起聊天按钮
+            var sendMsgButton = document.querySelector('#mmpop_profile .web_wechat_tab_launch-chat');
+            if(sendMsgButton){
+                // 检测到有发送消息按钮的时候要调用的回调
+                have(sendMsgButton)
+                // this.sendHealthReport(healthReport,msgItemElement)
+            }
+            // 理论上不会走这里，如果走了就会少发一个报告
+            else{
+                this.see_send_message_btn_start += delay;
 
+                if(this.see_send_message_btn_start >= this.SEE_SEND_MESSAGE_BTN_MAX * 1000){
+                    notHave();
+                }
+                else{
+                    this.seeSendMessageBtn(msgItemElement,have,notHave);
+                }
+            }
+        },delay)
+    }
 
     /**
      * 验证是否有新好友
@@ -329,6 +371,7 @@ class WeChat{
             var friendRecommendMsgElement = this.getFriendRecommendMsgElement();
             // 如果没有【添加好友】的信息 则执行下一次轮询
             if(!friendRecommendMsgElement){
+                this.noHaveNewFriendApply();
                 wechat = null;
                 wechat = new WeChat().init();
             }
